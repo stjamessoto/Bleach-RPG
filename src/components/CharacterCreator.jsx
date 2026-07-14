@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { FACTIONS } from "../data/factions.js";
 
-export default function CharacterCreator({ onComplete, onCancel }) {
+export default function CharacterCreator({ onComplete, onCancel, busy, error }) {
   const [name, setName] = useState("");
   const [primary, setPrimary] = useState("soul_reaper");
   const [hybrid, setHybrid] = useState(false);
@@ -10,9 +10,10 @@ export default function CharacterCreator({ onComplete, onCancel }) {
   const [appearance, setAppearance] = useState("");
   const [weapon, setWeapon] = useState("");
 
-  const ready = name.trim() && appearance.trim() && weapon.trim();
+  const ready = name.trim() && appearance.trim() && weapon.trim() && !busy;
 
   function submit() {
+    if (busy) return;
     const p = FACTIONS[primary];
     const s = hybrid ? FACTIONS[secondary] : null;
     onComplete({
@@ -117,8 +118,10 @@ export default function CharacterCreator({ onComplete, onCancel }) {
         />
       </label>
 
+      {error && <div className="entry error">⚠ {error}</div>}
+
       <button className="begin-btn" disabled={!ready} onClick={submit}>
-        Light the Fuse 🔥
+        {busy ? "Igniting…" : "Light the Fuse 🔥"}
       </button>
     </div>
   );

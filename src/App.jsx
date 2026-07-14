@@ -11,6 +11,8 @@ export default function App() {
   const [saves, setSaves] = useState([]);
   const [active, setActive] = useState(null); // full save record while playing
   const [error, setError] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState(null);
 
   useEffect(() => {
     refreshSaves();
@@ -28,10 +30,20 @@ export default function App() {
   }
 
   async function handleNewCharacter(char) {
-    const pools = buildResourcePools(char.primaryFaction, char.secondaryFaction);
-    const saved = await createSave({ character: char, pools, flags: {}, history: [], log: [] });
-    setActive(saved);
-    setView("play");
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const pools = buildResourcePools(char.primaryFaction, char.secondaryFaction);
+      const saved = await createSave({ character: char, pools, flags: {}, history: [], log: [] });
+      setActive(saved);
+      setView("play");
+    } catch (e) {
+      setCreateError(
+        `Couldn't create your character: ${e.message}. Is the GM server running (npm run server)?`
+      );
+    } finally {
+      setCreating(false);
+    }
   }
 
   async function handleContinue(id) {
@@ -59,6 +71,8 @@ export default function App() {
       <CharacterCreator
         onComplete={handleNewCharacter}
         onCancel={() => setView("select")}
+        busy={creating}
+        error={createError}
       />
     );
   }
