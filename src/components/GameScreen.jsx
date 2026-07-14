@@ -21,11 +21,26 @@ export default function GameScreen({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [elapsed, setElapsed] = useState(0);
   const bottomRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log, busy]);
+
+  // Tick an elapsed-time counter while a turn is in flight — Gemini calls can
+  // take a while (retries, wiki lookups), so this plus the live status
+  // message gives real feedback instead of a static "loading" line.
+  useEffect(() => {
+    if (!busy) {
+      setElapsed(0);
+      return;
+    }
+    const start = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 250);
+    return () => clearInterval(id);
+  }, [busy]);
 
   // Only kick off the prologue for a brand-new character. Resumed saves
   // already have a history and should just render their existing log.
@@ -43,6 +58,7 @@ export default function GameScreen({
     if (busy) return;
     setBusy(true);
     setError(null);
+    setStatusMessage("Consulting Gemini…");
 
     const nextHistory = [...history, { role: "user", content: playerText }];
     const nextLogBase = isOpening ? log : [...log, { who: "player", text: playerText }];
@@ -55,6 +71,7 @@ export default function GameScreen({
         pools,
         flags,
         history: nextHistory,
+        onStatus: setStatusMessage,
       });
 
       const { delta, narrative } = parseDelta(text);
@@ -79,6 +96,7 @@ export default function GameScreen({
       setError(e.message);
     } finally {
       setBusy(false);
+      setStatusMessage("");
     }
   }
 
@@ -115,7 +133,17 @@ export default function GameScreen({
             )}
           </div>
         ))}
-        {busy && <div className="entry gm loading">The GM weaves fate…</div>}
+        {busy && (
+          <div className="entry gm loading">
+            <div className="progress-bar">
+              <div className="progress-fill" />
+            </div>
+            <div className="progress-status">
+              {statusMessage || "The GM weaves fate…"}{" "}
+              <span className="progress-elapsed">({elapsed}s)</span>
+            </div>
+          </div>
+        )}
         {error && (
           <div className="entry error">
             ⚠ {error.toLowerCase().includes("rate limited")

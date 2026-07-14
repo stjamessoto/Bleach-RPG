@@ -58,7 +58,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithRetry(url, options, label = "gemini") {
+async function fetchWithRetry(url, options, label = "gemini", onStatus) {
   let lastErr = null;
 
   for (let attempt = 0; attempt < BACKOFF_MS.length; attempt++) {
@@ -68,7 +68,11 @@ async function fetchWithRetry(url, options, label = "gemini") {
     } catch (err) {
       lastErr = err;
       console.warn(`[retry] ${label}: network error on attempt ${attempt + 1}: ${err.message}`);
-      await sleep(BACKOFF_MS[attempt] + Math.random() * 300);
+      const waitMs = BACKOFF_MS[attempt] + Math.random() * 300;
+      onStatus?.(
+        `Network hiccup talking to Gemini — retrying in ${Math.round(waitMs / 1000)}s (attempt ${attempt + 2}/${BACKOFF_MS.length})`
+      );
+      await sleep(waitMs);
       continue;
     }
 
@@ -84,6 +88,9 @@ async function fetchWithRetry(url, options, label = "gemini") {
 
     console.warn(
       `[retry] ${label}: got HTTP ${res.status}, attempt ${attempt + 1}/${BACKOFF_MS.length}, waiting ${Math.round(waitMs)}ms`
+    );
+    onStatus?.(
+      `Gemini is ${res.status === 429 ? "rate limiting" : "overloaded"} — retrying in ${Math.round(waitMs / 1000)}s (attempt ${attempt + 1}/${BACKOFF_MS.length})`
     );
     await sleep(waitMs);
   }
@@ -186,7 +193,7 @@ function toGeminiContents(messages) {
   }));
 }
 
-async function callGemini(contents, system, maxTokens) {
+async function callGemini(contents, system, maxTokens, onStatus) {
   const res = await fetchWithRetry(
     GEMINI_URL,
     {
@@ -205,7 +212,8 @@ async function callGemini(contents, system, maxTokens) {
         },
       }),
     },
-    "generateContent"
+    "generateContent",
+    onStatus
   );
 
   const data = await res.json();
@@ -214,14 +222,17 @@ async function callGemini(contents, system, maxTokens) {
 
 // Runs the function-calling loop: ask Gemini, execute any lookup_bleach_wiki
 // calls it requests, feed results back, repeat (capped) until it stops asking.
-async function runGmTurn({ system, messages, maxTokens }) {
+// onStatus(message) is called with human-readable progress updates so the
+// client can show live status instead of a blind spinner.
+async function runGmTurn({ system, messages, maxTokens, onStatus }) {
   const contents = toGeminiContents(messages);
   const sources = [];
   const MAX_LOOKUPS = 3;
   let lookupCount = 0;
 
   for (let round = 0; round <= MAX_LOOKUPS; round++) {
-    const { ok, status, data } = await callGemini(contents, system, maxTokens);
+    onStatus?.(round === 0 ? "Consulting Gemini…" : "Reviewing canon, continuing the scene…");
+    const { ok, status, data } = await callGemini(contents, system, maxTokens, onStatus);
 
     if (!ok) {
       if (status === 429 || status === 503) {
@@ -251,6 +262,7 @@ async function runGmTurn({ system, messages, maxTokens }) {
       if (lookupCount >= MAX_LOOKUPS) break;
       lookupCount++;
       const query = part.functionCall.args?.query || "";
+      onStatus?.(`Looking up Bleach Wiki: "${query}"…`);
       console.log(`[wiki] lookup: "${query}"`);
       const result = await lookupBleachWiki(query);
       if (result.title) {
@@ -400,22 +412,41 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && req.url === "/api/gm") {
+    let streaming = false;
     try {
       const raw = await readBody(req);
       const { system, messages, max_tokens } = JSON.parse(raw);
+
+      // Stream progress as Server-Sent Events so the client can show live
+      // status (retries, wiki lookups) instead of a blind spinner.
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      streaming = true;
+
+      const sendEvent = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
       const { text, sources } = await runGmTurn({
         system,
         messages,
         maxTokens: max_tokens,
+        onStatus: (message) => sendEvent({ type: "status", message }),
       });
 
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ text, sources }));
+      sendEvent({ type: "done", text, sources });
+      res.end();
     } catch (err) {
-      const status = err.rateLimited ? 429 : 500;
-      res.writeHead(status, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: err.message || String(err) }));
+      const message = err.rateLimited
+        ? "Rate limited by Gemini — wait a moment and try again."
+        : err.message || String(err);
+      if (!streaming) {
+        res.writeHead(500, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error: message }));
+      }
+      res.write(`data: ${JSON.stringify({ type: "error", message })}\n\n`);
+      res.end();
     }
     return;
   }

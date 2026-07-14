@@ -59,10 +59,12 @@ function clamp(n, lo, hi) {
   return Math.max(lo, Math.min(hi, n));
 }
 
-// Send the running transcript to the GM proxy and get the next turn.
-// Returns { text, sources } where sources is [{title, url}] for any Bleach
-// Wiki pages the GM consulted this turn.
-export async function requestTurn({ character, pools, flags, history }) {
+// Send the running transcript to the GM proxy and get the next turn. The
+// server streams progress as Server-Sent Events (retries, wiki lookups) via
+// onStatus(message), then resolves with { text, sources } once the GM's
+// reply is complete. sources is [{title, url}] for any Bleach Wiki pages
+// consulted this turn.
+export async function requestTurn({ character, pools, flags, history, onStatus }) {
   const system = buildSystemPrompt(character, pools, flags);
 
   const res = await fetch("/api/gm", {
@@ -75,14 +77,39 @@ export async function requestTurn({ character, pools, flags, history }) {
     }),
   });
 
-  const data = await res.json();
-
-  if (!res.ok || data.error) {
-    if (res.status === 429) {
-      throw new Error("Rate limited by Gemini — wait a moment and try again.");
-    }
+  if (!res.ok) {
+    // Only happens if the server errored before it could start streaming
+    // (e.g. a malformed request body).
+    const data = await res.json().catch(() => ({}));
     throw new Error(data.error || `GM request failed: ${res.status}`);
   }
 
-  return { text: data.text, sources: data.sources || [] };
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let sepIndex;
+    while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+      const rawEvent = buffer.slice(0, sepIndex).trim();
+      buffer = buffer.slice(sepIndex + 2);
+      if (!rawEvent.startsWith("data:")) continue;
+
+      const payload = JSON.parse(rawEvent.slice(5).trim());
+
+      if (payload.type === "status") {
+        onStatus?.(payload.message);
+      } else if (payload.type === "done") {
+        return { text: payload.text, sources: payload.sources || [] };
+      } else if (payload.type === "error") {
+        throw new Error(payload.message || "GM request failed");
+      }
+    }
+  }
+
+  throw new Error("GM stream ended unexpectedly with no response.");
 }
