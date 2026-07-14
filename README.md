@@ -101,9 +101,14 @@ the engine owns the math, and the wiki keeps the lore honest.
 
 ## Free-tier notes
 
-- **Model:** defaults to `gemini-2.5-flash`. You can switch to
-  `gemini-2.5-flash-lite` in `.env` for higher requests-per-minute if you play
-  in fast bursts.
+- **Model:** defaults to `gemini-flash-latest`, a Google-maintained alias that
+  always points at their current recommended free-tier flash model — it keeps
+  working even after a specific dated model (like the old `gemini-2.5-flash`)
+  gets retired. If you see a `404 ... no longer available` error, it means
+  Google retired whatever's in `MODEL`; switch `.env` back to
+  `gemini-flash-latest` (or check https://aistudio.google.com/apikey for the
+  current model list). For higher requests-per-minute in fast bursts, try
+  `gemini-flash-lite-latest`.
 - **Rate limits:** roughly 15 requests/minute and 1,500/day on the free tier.
   Each turn costs at least one Gemini request, and can cost a few more when
   the GM looks things up on the wiki (up to 3 lookups per turn). The server

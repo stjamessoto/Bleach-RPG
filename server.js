@@ -33,8 +33,10 @@ try {
 }
 
 const API_KEY = process.env.GEMINI_API_KEY;
-// Gemini 2.5 Flash is the free-tier workhorse (~15 RPM, ~1,500 requests/day).
-const MODEL = process.env.MODEL || "gemini-2.5-flash";
+// "gemini-flash-latest" is a Google-maintained alias that always points to
+// their current recommended free-tier flash model, so it keeps working when
+// a specific dated model (like gemini-2.5-flash) gets retired.
+const MODEL = process.env.MODEL || "gemini-flash-latest";
 const PORT = process.env.PORT || 8787;
 
 if (!API_KEY || API_KEY === "PASTE_YOUR_KEY_HERE") {
