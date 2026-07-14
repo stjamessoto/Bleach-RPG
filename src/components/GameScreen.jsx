@@ -1,7 +1,7 @@
 // GameScreen.jsx — the running game: transcript, player input, GM turns, autosave
 import React, { useState, useRef, useEffect } from "react";
 import HUD from "./HUD.jsx";
-import { requestTurn, parseDelta, applyDelta } from "../engine/gameEngine.js";
+import { requestTurn, parseDelta, applyDelta, requestSceneImage } from "../engine/gameEngine.js";
 import { updateSave } from "../engine/saves.js";
 
 export default function GameScreen({
@@ -107,6 +107,20 @@ export default function GameScreen({
     sendTurn(t);
   }
 
+  async function illustrateEntry(index) {
+    setLog((l) => l.map((e, i) => (i === index ? { ...e, imageLoading: true, imageError: null } : e)));
+    try {
+      const imageUrl = await requestSceneImage({
+        appearance: character_.appearance,
+        weapon: character_.weapon,
+        narrative: log[index].text,
+      });
+      setLog((l) => l.map((e, i) => (i === index ? { ...e, imageLoading: false, imageUrl } : e)));
+    } catch (e) {
+      setLog((l) => l.map((e, i) => (i === index ? { ...e, imageLoading: false, imageError: e.message } : e)));
+    }
+  }
+
   return (
     <div className="game">
       <HUD character={character_} pools={pools} flags={flags} onExit={onExit} />
@@ -129,6 +143,24 @@ export default function GameScreen({
                     📖 Canon: {s.title}
                   </a>
                 ))}
+              </div>
+            )}
+            {entry.who === "gm" && (
+              <div className="illustration">
+                {entry.imageUrl && (
+                  <img className="scene-image" src={entry.imageUrl} alt="Illustrated scene" />
+                )}
+                {entry.imageLoading && (
+                  <div className="illustrate-status">🎨 Drawing the scene…</div>
+                )}
+                {entry.imageError && (
+                  <div className="illustrate-status error">⚠ {entry.imageError}</div>
+                )}
+                {!entry.imageLoading && (
+                  <button className="illustrate-btn" onClick={() => illustrateEntry(i)}>
+                    🎨 {entry.imageUrl ? "Re-illustrate" : "Illustrate This Scene"}
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -12,6 +12,10 @@ Zanpakutō/Espada/Arrancar abilities, Quincy and Hollow techniques, character
 details) instead of guessing. Any pages it consults are cited under its reply
 as small "📖 Canon: ..." links.
 
+Any GM narrative can also be **illustrated on demand** in black-and-white
+manga style via Hugging Face's free Inference API — click "🎨 Illustrate This
+Scene" under a scene to generate art of it.
+
 ## What's inside
 
 | File / folder | Role |
@@ -68,6 +72,12 @@ your personal playthrough data — not project source).
    GEMINI_API_KEY=your-actual-key-goes-here
    ```
 
+   Optional — for scene illustration, also add a free Hugging Face token (see
+   [Scene illustration](#scene-illustration-optional) below):
+   ```
+   HUGGINGFACE_API_KEY=your-hugging-face-token-here
+   ```
+
 5. **Run both processes** (two terminals):
    ```bash
    # Terminal 1 — the GM proxy
@@ -98,6 +108,33 @@ Each turn, the engine:
 
 This keeps the fiction and the UI numbers consistent — the model narrates, but
 the engine owns the math, and the wiki keeps the lore honest.
+
+## Scene illustration (optional)
+
+Click **"🎨 Illustrate This Scene"** under any GM narrative to generate a
+black-and-white manga-style image of it, drawn from your character's
+appearance, sealed weapon, and that scene's text.
+
+- **Setup:** get a free token at https://huggingface.co/settings/tokens (the
+  **Inference** scope is all it needs — not Read-Only/Write/Full Access), then
+  add it to `.env` as `HUGGINGFACE_API_KEY=...`. Without it, the button will
+  show an error but the rest of the game works normally.
+- **Model:** `black-forest-labs/FLUX.1-schnell` via Hugging Face's free
+  `hf-inference` router. This was chosen by testing several anime/manga-tuned
+  checkpoints directly — most (Animagine, Counterfeit, base SDXL, etc.) come
+  back `"not supported by provider hf-inference"` or `"deprecated"` on the
+  free tier; FLUX.1-schnell is one of the few still served for free and it
+  responds well to an explicit "Tite Kubo's Bleach manga" style prompt.
+- **On-demand, not automatic:** illustration is a manual per-scene action, not
+  generated on every turn, to keep turns fast and avoid burning through the
+  free tier's request limits silently.
+- **Not saved:** generated images live only in the current browser session
+  (they're not written into your save file), since embedding images would
+  bloat the JSON saves considerably over a long campaign. Reload or resume a
+  save and you'll need to re-illustrate any scene you want to see again.
+- **Known quirk:** the model sometimes renders illegible pseudo-text on
+  in-scene signage/backgrounds (a common diffusion-model artifact) — harmless,
+  just don't expect it to spell anything real.
 
 ## Free-tier notes
 

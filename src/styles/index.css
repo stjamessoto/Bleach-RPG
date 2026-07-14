@@ -324,6 +324,33 @@ body { background: var(--bg); color: var(--ink); }
 }
 .source-link:hover { opacity: 1; color: var(--accent); border-color: var(--accent); }
 
+.illustration { margin-top: 10px; }
+.scene-image {
+  display: block;
+  max-width: 360px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+.illustrate-btn {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--gold);
+  font-size: 0.78rem;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.illustrate-btn:hover { border-color: var(--gold); }
+.illustrate-status {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+.illustrate-status.error { color: var(--danger); font-style: normal; }
+
 .input-bar {
   grid-column: 2;
   display: flex;

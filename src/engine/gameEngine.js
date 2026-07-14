@@ -113,3 +113,22 @@ export async function requestTurn({ character, pools, flags, history, onStatus }
 
   throw new Error("GM stream ended unexpectedly with no response.");
 }
+
+// Request an on-demand manga-style illustration of a scene. Returns an
+// object URL for the generated image (valid for this browser session only —
+// illustrations are not persisted into saves).
+export async function requestSceneImage({ appearance, weapon, narrative }) {
+  const res = await fetch("/api/scene-image", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ appearance, weapon, narrative }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Image generation failed: ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}

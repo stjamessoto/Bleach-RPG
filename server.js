@@ -37,6 +37,7 @@ const API_KEY = process.env.GEMINI_API_KEY;
 // their current recommended free-tier flash model, so it keeps working when
 // a specific dated model (like gemini-2.5-flash) gets retired.
 const MODEL = process.env.MODEL || "gemini-flash-latest";
+const HF_API_KEY = process.env.HUGGINGFACE_API_KEY;
 const PORT = process.env.PORT || 8787;
 
 if (!API_KEY || API_KEY === "PASTE_YOUR_KEY_HERE") {
@@ -152,6 +153,88 @@ async function lookupBleachWiki(query) {
     return result;
   } catch (err) {
     return { title: null, extract: "", error: "lookup failed" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scene illustration — on-demand manga-style art via Hugging Face's free
+// Inference router. FLUX.1-schnell is one of the few models still served on
+// the free hf-inference provider (most anime-specific checkpoints return
+// "not supported by provider hf-inference" now), and it follows an explicit
+// "Tite Kubo's Bleach manga" style prompt well without refusing.
+// ---------------------------------------------------------------------------
+const HF_IMAGE_URL =
+  "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell";
+
+function buildScenePrompt({ appearance, weapon, narrative }) {
+  const clip = (s, n) => (s || "").trim().slice(0, n);
+  return [
+    "Black and white manga page illustration in the style of Tite Kubo's Bleach manga.",
+    appearance ? `Character appearance: ${clip(appearance, 300)}.` : "",
+    weapon ? `Sealed weapon: ${clip(weapon, 200)}.` : "",
+    narrative ? `Scene: ${clip(narrative, 500)}.` : "",
+    "High contrast ink linework, sharp angular character design, dramatic screentone " +
+      "shading, dynamic speed lines and paneling, moody atmosphere. No text, no speech " +
+      "bubbles, no watermark, no color.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+async function generateSceneImage(prompt) {
+  return fetchWithRetry(
+    HF_IMAGE_URL,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${HF_API_KEY}`,
+      },
+      body: JSON.stringify({
+        inputs: prompt,
+        parameters: { width: 768, height: 1024 },
+      }),
+    },
+    "hf-image"
+  );
+}
+
+async function handleSceneImageRoute(req, res) {
+  try {
+    if (!HF_API_KEY) {
+      res.writeHead(500, { "content-type": "application/json" });
+      return res.end(
+        JSON.stringify({ error: "HUGGINGFACE_API_KEY is not set on the server." })
+      );
+    }
+
+    const raw = await readBody(req);
+    const { appearance, weapon, narrative } = JSON.parse(raw);
+    const prompt = buildScenePrompt({ appearance, weapon, narrative });
+
+    const imgRes = await generateSceneImage(prompt);
+
+    if (!imgRes.ok) {
+      let message = `Image generation failed (HTTP ${imgRes.status})`;
+      try {
+        const errJson = await imgRes.json();
+        if (errJson.error) message = errJson.error;
+      } catch {
+        /* body wasn't JSON — keep the generic message */
+      }
+      const status = imgRes.status === 429 || imgRes.status === 503 ? 429 : 500;
+      res.writeHead(status, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ error: message }));
+    }
+
+    const buf = Buffer.from(await imgRes.arrayBuffer());
+    res.writeHead(200, {
+      "content-type": imgRes.headers.get("content-type") || "image/jpeg",
+    });
+    res.end(buf);
+  } catch (err) {
+    res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: err.message || String(err) }));
   }
 }
 
@@ -451,6 +534,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/api/scene-image") {
+    return handleSceneImageRoute(req, res);
+  }
+
   const parsedUrl = new URL(req.url, "http://localhost");
   const segments = parsedUrl.pathname.split("/").filter(Boolean);
 
@@ -466,5 +553,8 @@ server.listen(PORT, () => {
   console.log(`\n  GM proxy listening on http://localhost:${PORT}`);
   console.log(`  Model: ${MODEL} (Google Gemini free tier)`);
   console.log(`  Bleach Wiki lookups: enabled (bleach.fandom.com)`);
+  console.log(
+    `  Scene illustration: ${HF_API_KEY ? "enabled (Hugging Face FLUX.1-schnell)" : "disabled (no HUGGINGFACE_API_KEY set)"}`
+  );
   console.log(`  Saves directory: ${SAVES_DIR}\n`);
 });
